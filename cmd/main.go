@@ -60,11 +60,11 @@ var (
 	// 預設對角線座標,對角線模式裡，LT -> RB 以及 RT -> LT 兩條對角線都不能有重複數字
 	// LT to RB
 	diagonalLTCoordinates = []Coordinate{
-		Coordinate{X: 0, Y: 0}, Coordinate{X: 1, Y: 1}, Coordinate{X: 2, Y: 2}, Coordinate{X: 3, Y: 3}, Coordinate{X: 4, Y: 4}, Coordinate{X: 5, Y: 5}, Coordinate{X: 6, Y: 6}, Coordinate{X: 7, Y: 7}, Coordinate{X: 8, Y: 8},
+		{X: 0, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: 2}, {X: 3, Y: 3}, {X: 4, Y: 4}, {X: 5, Y: 5}, {X: 6, Y: 6}, {X: 7, Y: 7}, {X: 8, Y: 8},
 	}
 	// RT to LT
 	diagonalRTCoordinates = []Coordinate{
-		Coordinate{X: 8, Y: 0}, Coordinate{X: 7, Y: 1}, Coordinate{X: 6, Y: 2}, Coordinate{X: 5, Y: 3}, Coordinate{X: 4, Y: 4}, Coordinate{X: 3, Y: 5}, Coordinate{X: 2, Y: 6}, Coordinate{X: 1, Y: 7}, Coordinate{X: 0, Y: 8},
+		{X: 8, Y: 0}, {X: 7, Y: 1}, {X: 6, Y: 2}, {X: 5, Y: 3}, {X: 4, Y: 4}, {X: 3, Y: 5}, {X: 2, Y: 6}, {X: 1, Y: 7}, {X: 0, Y: 8},
 	}
 
 	// 遞歸計數器
@@ -106,7 +106,7 @@ func main() {
 	case modeDiagonal:
 		modStr = "diagonal"
 	}
-	fmt.Printf("puzzle mode %v, input board: \n%v\n", modStr, boardFileString)
+	fmt.Printf("mode %v, input board: \n%v\n", modStr, boardFileString)
 	fmt.Println("------------------------------")
 	row := 0
 	for _, col := range strings.Split(boardFileString, "\n") {
@@ -133,7 +133,12 @@ func main() {
 
 	backtrack(puzzleMode, board, 0, 0)
 	fmt.Printf("recursion=%v,during=%v\n", recursionCount, time.Since(st))
-	PrintBoard(board)
+	if FillDone(board) {
+		PrintBoard(board)
+	} else {
+		fmt.Println("!!!can't get resolve!!!")
+	}
+
 }
 
 func backtrack(mode string, board [][]int, row, col uint) bool {
