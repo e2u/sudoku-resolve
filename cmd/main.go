@@ -14,15 +14,22 @@ import (
 )
 
 const (
-	maxRow = 8
-	maxCol = 8
+	maxRow       = 8
+	maxCol       = 8
+	modeClassic  = "c"
+	modeDiagonal = "d"
 )
 
-type Posit struct {
-	StartX uint
-	StartY uint
-	EndX   uint
-	EndY   uint
+// AreaCoordinate 區域座標
+type AreaCoordinate struct {
+	Start Coordinate
+	End   Coordinate
+}
+
+// Coordinate
+type Coordinate struct {
+	X uint
+	Y uint
 }
 
 func init() {
@@ -30,6 +37,7 @@ func init() {
 	atomic.StoreUint64(&recursionCount, 0)
 
 	flag.StringVar(&boardFile, "b", "", "input board file")
+	flag.StringVar(&puzzleMode, "m", "c", "sudoku puzzleMode: c (classic) or d (diagonal)")
 
 	flag.Parse()
 
@@ -40,18 +48,32 @@ func init() {
 }
 
 var (
-	// 3x3 分組的座標,當前座標落在哪個分組計算方法
-	boardPosits = []Posit{
-		NewPosit(0, 0, 2, 2), NewPosit(3, 0, 5, 2), NewPosit(6, 0, 8, 2),
-		NewPosit(0, 3, 2, 5), NewPosit(3, 3, 5, 5), NewPosit(6, 3, 8, 5),
-		NewPosit(0, 6, 2, 8), NewPosit(3, 6, 5, 8), NewPosit(6, 6, 8, 8),
+	// 模式,
+	puzzleMode = modeClassic
+	// 預設 3x3 分組的座標,當前座標落在哪個分組計算方法
+	coordinates = []AreaCoordinate{
+		NewAreaCoordinate(Coordinate{X: 0, Y: 0}, Coordinate{X: 2, Y: 2}), NewAreaCoordinate(Coordinate{X: 3, Y: 0}, Coordinate{X: 5, Y: 2}), NewAreaCoordinate(Coordinate{X: 6, Y: 0}, Coordinate{X: 8, Y: 2}),
+		NewAreaCoordinate(Coordinate{X: 0, Y: 3}, Coordinate{X: 2, Y: 5}), NewAreaCoordinate(Coordinate{X: 3, Y: 3}, Coordinate{X: 5, Y: 5}), NewAreaCoordinate(Coordinate{X: 6, Y: 3}, Coordinate{X: 8, Y: 5}),
+		NewAreaCoordinate(Coordinate{X: 0, Y: 6}, Coordinate{X: 2, Y: 8}), NewAreaCoordinate(Coordinate{X: 3, Y: 6}, Coordinate{X: 5, Y: 8}), NewAreaCoordinate(Coordinate{X: 6, Y: 6}, Coordinate{X: 8, Y: 8}),
 	}
 
+	// 預設對角線座標,對角線模式裡，LT -> RB 以及 RT -> LT 兩條對角線都不能有重複數字
+	// LT to RB
+	diagonalLTCoordinates = []Coordinate{
+		{X: 0, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: 2}, {X: 3, Y: 3}, {X: 4, Y: 4}, {X: 5, Y: 5}, {X: 6, Y: 6}, {X: 7, Y: 7}, {X: 8, Y: 8},
+	}
+	// RT to LT
+	diagonalRTCoordinates = []Coordinate{
+		{X: 8, Y: 0}, {X: 7, Y: 1}, {X: 6, Y: 2}, {X: 5, Y: 3}, {X: 4, Y: 4}, {X: 3, Y: 5}, {X: 2, Y: 6}, {X: 1, Y: 7}, {X: 0, Y: 8},
+	}
+
+	// 遞歸計數器
 	recursionCount uint64
 
+	// 輸入文件
 	boardFile string
 
-	board [][]int = [][]int{
+	board = [][]int{
 		//------------------------------
 		{0, 0, 0 /**/, 0, 0, 0 /**/, 0, 0, 0},
 		{0, 0, 0 /**/, 0, 0, 0 /**/, 0, 0, 0},
@@ -77,7 +99,14 @@ func main() {
 	}
 
 	boardFileString := strings.TrimSpace(string(boardFileBytes))
-	fmt.Printf("input board: \n%v\n", boardFileString)
+	var modStr string
+	switch puzzleMode {
+	case modeClassic:
+		modStr = "classic"
+	case modeDiagonal:
+		modStr = "diagonal"
+	}
+	fmt.Printf("mode %v, input board: \n%v\n", modStr, boardFileString)
 	fmt.Println("------------------------------")
 	row := 0
 	for _, col := range strings.Split(boardFileString, "\n") {
@@ -96,34 +125,44 @@ func main() {
 		row++
 	}
 	st := time.Now()
-	backtrack(board, 0, 0)
-	fmt.Printf("RecursionCount=%v,during=%v\n", recursionCount, time.Since(st))
-	PrintBoard(board)
+
+	// 優先處理中心點,用經典模式處理
+	if board[4][4] == 0 {
+		MayNumbers(modeClassic, board, 4, 4)
+	}
+
+	backtrack(puzzleMode, board, 0, 0)
+	fmt.Printf("recursion=%v,during=%v\n", recursionCount, time.Since(st))
+	if FillDone(board) {
+		PrintBoard(board)
+	} else {
+		fmt.Println("!!!can't get resolve!!!")
+	}
 
 }
 
-func backtrack(board [][]int, row, col uint) bool {
+func backtrack(mode string, board [][]int, row, col uint) bool {
 	atomic.AddUint64(&recursionCount, 1)
 	if row > maxRow {
 		return true
 	}
 
 	if col > maxCol {
-		return backtrack(board, row+1, 0)
+		return backtrack(mode, board, row+1, 0)
 	}
 
 	currentValue := GetPointValue(board, row, col)
 	logrus.Infof(">> row=%v,col=%v,value=%v", row, col, currentValue)
 
 	if currentValue > 0 {
-		return backtrack(board, row, col+1)
+		return backtrack(mode, board, row, col+1)
 	}
 
-	mayBeArray := MayNumbers(board, row, col)
+	mayBeArray := MayNumbers(mode, board, row, col)
 	logrus.Infof("may be=%v", mayBeArray)
 	for _, mayBe := range mayBeArray {
 		board[row][col] = mayBe
-		if backtrack(board, row, col+1) {
+		if backtrack(mode, board, row, col+1) {
 			return true
 		}
 		board[row][col] = 0
@@ -133,7 +172,6 @@ func backtrack(board [][]int, row, col uint) bool {
 }
 
 // GetPointValue 獲取 border 中指定座標的值
-// TODO 需要檢查座標值不要越界
 func GetPointValue(border [][]int, row, col uint) int {
 	if row > maxRow || col > maxCol {
 		return 0
@@ -142,7 +180,7 @@ func GetPointValue(border [][]int, row, col uint) int {
 }
 
 // 返回當前位置可以填的數字
-func MayNumbers(board [][]int, row, col uint) []int {
+func MayNumbers(mode string, board [][]int, row, col uint) []int {
 	if row > maxRow || col > maxRow {
 		return []int{}
 	}
@@ -167,10 +205,38 @@ func MayNumbers(board [][]int, row, col uint) []int {
 		exists = append(exists, v)
 	}
 	// 尋找當前座標所在位置所在的九宮格中的數字
-	posit := FindPosit(row, col)
-	for sx := posit.StartX; sx <= posit.EndX; sx++ {
-		for sy := posit.StartY; sy <= posit.EndY; sy++ {
+	areaCoordinate := GetAreaCoordinate(row, col)
+	for sx := areaCoordinate.Start.X; sx <= areaCoordinate.End.X; sx++ {
+		for sy := areaCoordinate.Start.Y; sy <= areaCoordinate.End.Y; sy++ {
 			exists = append(exists, board[sx][sy])
+		}
+	}
+	// 如果運行模式是 對角線模式,則需要檢查再檢查對角線上的值
+	// 如果當前座標落在兩條對角線上，則排除對角線上已存在的數字
+	// 檢查是否落在指定的對角線座標上
+	inDiagonalCoordinates := func(dcs []Coordinate, x, y uint) bool {
+		for _, c := range dcs {
+			if c.X == x && c.Y == y {
+				return true
+			}
+		}
+		return false
+	}
+	// 獲取指定對角線上已經存在的值
+	getDiagonalValues := func(dcs []Coordinate) {
+		for _, c := range dcs {
+			exists = append(exists, board[c.X][c.Y])
+			logrus.Infof("diagonal puzzleMode append exists value=%v", board[c.X][c.Y])
+		}
+	}
+	// 如果是對角線模式，而且中心點 4,4 是需要填充的話，優先處理中心點
+	if mode == modeDiagonal {
+		logrus.Infof("diagonal puzzleMode")
+		switch {
+		case inDiagonalCoordinates(diagonalLTCoordinates, row, col): // 對角線 LT to RB
+			getDiagonalValues(diagonalLTCoordinates)
+		case inDiagonalCoordinates(diagonalRTCoordinates, row, col): // 對角線 RT to LB
+			getDiagonalValues(diagonalRTCoordinates)
 		}
 	}
 
@@ -182,7 +248,7 @@ func MayNumbers(board [][]int, row, col uint) []int {
 		result = append(result, i)
 	}
 
-	logrus.Infof("current posint row=%v,col=%v,number=%v,may be=%v", row, col, board[row][col], result)
+	logrus.Infof("current coordinate row=%v,col=%v,number=%v,may be=%v", row, col, board[row][col], result)
 	return result
 }
 
@@ -195,27 +261,27 @@ func IntArrayContains(i int, a []int) bool {
 	return false
 }
 
-// IsZero 不是正確值
-func (p Posit) IsZero() bool {
-	return p.EndX == 0 && p.EndY == 0
+func NewAreaCoordinate(start, end Coordinate) AreaCoordinate {
+	return AreaCoordinate{Start: start, End: end}
 }
 
-func NewPosit(sx, sy, ex, ey uint) Posit {
-	return Posit{StartX: sx, StartY: sy, EndX: ex, EndY: ey}
+// IsZero 是否是正確的座標值
+func (p AreaCoordinate) IsZero() bool {
+	return p.End.X == 0 && p.End.Y == 0
 }
 
 // 傳入 x,y 找到分組起始結束座標
 // 之後可以遍歷這些座標範圍查找是否有數字存在
-func FindPosit(x, y uint) Posit {
-	for _, bp := range boardPosits {
-		if x >= bp.StartX && y >= bp.StartY && x <= bp.EndX && y <= bp.EndY {
+func GetAreaCoordinate(x, y uint) AreaCoordinate {
+	for _, bp := range coordinates {
+		if x >= bp.Start.X && y >= bp.Start.Y && x <= bp.End.X && y <= bp.End.Y {
 			return bp
 		}
 	}
-	return Posit{}
+	return AreaCoordinate{}
 }
 
-// FillDone 是否全部都填充完畢
+// FillDone 檢查是否全部都填充完畢
 func FillDone(board [][]int) bool {
 	for row := 0; row <= maxRow; row++ {
 		for col := 0; col <= maxCol; col++ {
